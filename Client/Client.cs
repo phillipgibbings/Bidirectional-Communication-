@@ -5,13 +5,17 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Security.Cryptography;
 using System.Configuration;
+using System.Diagnostics;
 
 namespace Client
 {
     public partial class Client : Form
     {
-        private static string EncryptionKey = Properties.Settings.Default.Key;
-        private static string EncryptionIV = Properties.Settings.Default.IV;
+        private static readonly string defaultKey = "nA3WcZy/RTeVhhxMSn0mzPU32S2x9oof1fOZekHwTfQ=";
+        private static readonly string defaultIV = "gzGFRb/FUf7awGZ3oSAjEw==";
+
+        private static string EncryptionKey = string.Empty;
+        private static string EncryptionIV= string.Empty;
 
         public Client()
         {
@@ -43,21 +47,33 @@ namespace Client
                     await client.ConnectAsync("127.0.0.1", 8080);
                     var stream = client.GetStream();
 
-                    // Send terminal name request
-                    var request = "REGISTER_TERMINAL " + Environment.MachineName;
+                    // Send DateTime/Terminal Name and Encrypted Request 
+                    var request = DateTime.Now.ToString("G") + "," + Environment.MachineName + "," + EncryptString(true, "REGISTER_TERMINAL", string.Empty, string.Empty);
+
+                    // Convert to a byte array
                     var requestBytes = Encoding.UTF8.GetBytes(request);
+
+                    // Send byte array to the server
                     await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
 
-                    // Handle server response for terminal name
+                    // Server response for terminal registration/state
                     var ackBuffer = new byte[256];
-                    var bytesRead = await stream.ReadAsync(ackBuffer, 0, ackBuffer.Length);
-                    var ackResponse = Encoding.UTF8.GetString(ackBuffer, 0, bytesRead);
-                    Log("Server response: " + ackResponse);
 
-                    if (ackResponse.StartsWith("Terminal registered successfully"))
+                    // Read the server response byte array
+                    var bytesRead = await stream.ReadAsync(ackBuffer, 0, ackBuffer.Length);
+
+                    // Convert the byte array back into a string
+                    var encryptedResponse = Encoding.UTF8.GetString(ackBuffer, 0, bytesRead);
+
+                    //Decrypte the string
+                    var decrypedResponse = DecryptString(encryptedResponse, defaultKey, defaultIV);
+
+                    Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Server response: " + encryptedResponse);
+
+                    if (decrypedResponse.StartsWith("Terminal registered successfully"))
                     {
-                        Log("Terminal registration successful.");
-                        var parts = ackResponse.Split(';');
+                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Terminal registration successful.");
+                        var parts = decrypedResponse.Split(',');
                         foreach (var part in parts)
                         {
                             if (part.StartsWith("Key="))
@@ -70,13 +86,15 @@ namespace Client
                             }
                         }
 
-                        UpdateAppConfig("Key", EncryptionKey);
-                        UpdateAppConfig("IV", EncryptionIV);
-                        Log("Encryption key and IV updated.");
+                        Properties.Settings.Default.Key = EncryptionKey;
+                        Properties.Settings.Default.IV = EncryptionIV;
+                        Properties.Settings.Default.Save();
+
+                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Encryption key and IV updated.");
                     }
-                    else if (ackResponse.Contains("Terminal already registered"))
+                    else if (decrypedResponse.Contains("Terminal already registered"))
                     {
-                        Log("Terminal is already registered.");
+                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Terminal is already registered.");
                     }
 
                     stream.Close();
@@ -85,23 +103,8 @@ namespace Client
             }
             catch (Exception ex)
             {
-                LogError("RegisterTerminalAsync - " + ex.Message);
+                LogError("[ " + DateTime.Now.ToString("G") + " ]" + "RegisterTerminalAsync - " + ex.Message);
             }
-        }
-
-        private void UpdateAppConfig(string key, string value)
-        {
-            Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
-            if (config.AppSettings.Settings[key] != null)
-            {
-                config.AppSettings.Settings[key].Value = value;
-            }
-            else
-            {
-                config.AppSettings.Settings.Add(key, value);
-            }
-            config.Save(ConfigurationSaveMode.Modified);
-            ConfigurationManager.RefreshSection("appSettings");
         }
 
         #endregion
@@ -118,10 +121,10 @@ namespace Client
                     var stream = client.GetStream();
 
                     // Send Ping Request encrypted
-                    var encryptedRequest = Environment.MachineName + EncryptString("PING_SERVER", Environment.MachineName, EncryptionKey, EncryptionIV);
+                    var encryptedRequest = Environment.MachineName + "," + EncryptString(true, "PING_SERVER", EncryptionKey, EncryptionIV);
                     var requestBytes = Encoding.UTF8.GetBytes(encryptedRequest);
                     await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
-                    Log("PING_SERVER request sent.");
+                    Log("[ " + DateTime.Now.ToString("G") + " ]  " + "PING_SERVER request sent.");
 
                     // Handle Ping request response from the server
                     var responseBuffer = new byte[256];
@@ -129,7 +132,7 @@ namespace Client
                     if (bytesRead > 0)
                     {
                         var response = DecryptString(Encoding.UTF8.GetString(responseBuffer, 0, bytesRead), EncryptionKey, EncryptionIV);
-                        Log(response);
+                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + response);
                     }
 
                     stream.Close();
@@ -146,20 +149,29 @@ namespace Client
 
         #region Encryption Functions
 
-        private static string EncryptString(string plainText, string terminalID, string key, string iv)
+        private static string EncryptString(bool defaultEncryption, string message, string key, string iv)
         {
-            if (string.IsNullOrEmpty(plainText))
-                throw new ArgumentNullException(nameof(plainText));
+
+            // Get Set Key
+            if (defaultEncryption)
+            {
+                key = defaultKey;
+                iv = defaultIV;
+            }
+
+            if (string.IsNullOrEmpty(message)) { throw new ArgumentNullException(nameof(message)); }
+            if (string.IsNullOrEmpty(key)) { throw new ArgumentNullException(nameof(key)); }
+            if (string.IsNullOrEmpty(iv)) { throw new ArgumentNullException(nameof(iv)); }
 
             byte[] keyBytes = Convert.FromBase64String(key);
             byte[] ivBytes = Convert.FromBase64String(iv);
-            byte[] encrypted;
+            byte[] encryptedText;
 
-            using (Aes aesAlg = Aes.Create())
+            using (Aes aes = Aes.Create())
             {
-                aesAlg.Key = keyBytes;
-                aesAlg.IV = ivBytes;
-                ICryptoTransform encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV);
+                aes.Key = keyBytes;
+                aes.IV = ivBytes;
+                ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
 
                 using (var msEncrypt = new System.IO.MemoryStream())
                 {
@@ -167,14 +179,14 @@ namespace Client
                     {
                         using (var swEncrypt = new System.IO.StreamWriter(csEncrypt))
                         {
-                            swEncrypt.Write(plainText);
+                            swEncrypt.Write(message);
                         }
-                        encrypted = msEncrypt.ToArray();
+                        encryptedText = msEncrypt.ToArray();
                     }
                 }
             }
 
-            return Convert.ToBase64String(encrypted);
+            return Convert.ToBase64String(encryptedText);
         }
 
         private static string DecryptString(string cipherText, string key, string iv)
@@ -228,7 +240,7 @@ namespace Client
             txtConsole.SelectionStart = txtConsole.Text.Length;
             txtConsole.ScrollToCaret();
 
-            Console.WriteLine(message);
+            Debug.WriteLine(message);
         }
 
         private void LogError(string message)
@@ -242,5 +254,12 @@ namespace Client
         }
 
         #endregion
+
+        private void Client_Load(object sender, EventArgs e)
+        {
+            EncryptionKey = Properties.Settings.Default.Key;
+            EncryptionIV = Properties.Settings.Default.IV;
+        }
+    
     }
 }

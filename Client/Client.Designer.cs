@@ -112,6 +112,7 @@
             Name = "Client";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "Client";
+            Load += Client_Load;
             tableLayoutPanel1.ResumeLayout(false);
             tableLayoutPanel1.PerformLayout();
             ResumeLayout(false);
