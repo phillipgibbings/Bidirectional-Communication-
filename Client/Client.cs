@@ -45,65 +45,79 @@ namespace Client
                 using (var client = new TcpClient())
                 {
                     await client.ConnectAsync("127.0.0.1", 8080);
-                    var stream = client.GetStream();
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Connected to Server");
 
-                    // Send DateTime/Terminal Name and Encrypted Request 
+                    var stream = client.GetStream();
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Initiating Data Stream");
+
+                    // Send DateTime/Terminal Name and Encrypted Request
                     var request = DateTime.Now.ToString("G") + "," + Environment.MachineName + "," + EncryptString(true, "REGISTER_TERMINAL", string.Empty, string.Empty);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Encrypting 'REGISTER_TERMINAL' Message To Server");
 
                     // Convert to a byte array
                     var requestBytes = Encoding.UTF8.GetBytes(request);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Encoding Message To Server");
 
                     // Send byte array to the server
                     await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Sending Message To The Server");
 
                     // Server response for terminal registration/state
                     var ackBuffer = new byte[256];
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Creating Buffer For Server Response");
 
                     // Read the server response byte array
                     var bytesRead = await stream.ReadAsync(ackBuffer, 0, ackBuffer.Length);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Recieveing Message From Server");
 
                     // Convert the byte array back into a string
                     var encryptedResponse = Encoding.UTF8.GetString(ackBuffer, 0, bytesRead);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Decode Message From Server");
 
                     //Decrypte the string
                     var decrypedResponse = DecryptString(encryptedResponse, defaultKey, defaultIV);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Decrypting Message From Server");;
 
-                    Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Server response: " + encryptedResponse);
-
-                    if (decrypedResponse.StartsWith("Terminal registered successfully"))
+                    // Read Server Message for contents and handle appropriatley
+                    if (decrypedResponse.Contains("Terminal registered successfully"))
                     {
-                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Terminal registration successful.");
+                        Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ SERVER ] Terminal registration successful.");
                         var parts = decrypedResponse.Split(',');
                         foreach (var part in parts)
                         {
                             if (part.StartsWith("Key="))
                             {
                                 EncryptionKey = part.Substring(4);
+                                Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ SERVER ] New Encryption Key Sent");
                             }
                             else if (part.StartsWith("IV="))
                             {
                                 EncryptionIV = part.Substring(3);
+                                Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ SERVER ] New Encryption IV Sent");
                             }
                         }
-
+                        
+                        // Save provided keys to the configuration file
                         Properties.Settings.Default.Key = EncryptionKey;
                         Properties.Settings.Default.IV = EncryptionIV;
                         Properties.Settings.Default.Save();
 
-                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Encryption key and IV updated.");
+                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + "[ " + Environment.MachineName + " ] " + "Encryption Key And IV Saved to Configuration");
                     }
                     else if (decrypedResponse.Contains("Terminal already registered"))
                     {
-                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + "Terminal is already registered.");
+                        Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ SERVER ] Terminal is already registered");
                     }
 
                     stream.Close();
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Closing Data Stream");
                     client.Close();
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Terminating Connection To Server");
                 }
             }
             catch (Exception ex)
             {
-                LogError("[ " + DateTime.Now.ToString("G") + " ]" + "RegisterTerminalAsync - " + ex.Message);
+                LogError("RegisterTerminalAsync - " + ex.Message);
             }
         }
 
@@ -245,7 +259,7 @@ namespace Client
 
         private void LogError(string message)
         {
-            Log("ERROR: " + message);
+            Log("[ " + DateTime.Now.ToString("G") + " ] " + "ERROR: " + message);
         }
 
         private void btnClearText_Click(object sender, EventArgs e)

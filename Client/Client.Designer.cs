@@ -33,12 +33,13 @@
             btnClearText = new Button();
             btnRegisterTerminal = new Button();
             tableLayoutPanel1 = new TableLayoutPanel();
+            statusStrip1 = new StatusStrip();
             tableLayoutPanel1.SuspendLayout();
             SuspendLayout();
             // 
             // btnPingTheServer
             // 
-            btnPingTheServer.Location = new Point(3, 3);
+            btnPingTheServer.Location = new Point(3, 32);
             btnPingTheServer.Name = "btnPingTheServer";
             btnPingTheServer.Size = new Size(122, 23);
             btnPingTheServer.TabIndex = 0;
@@ -57,13 +58,13 @@
             txtConsole.Name = "txtConsole";
             tableLayoutPanel1.SetRowSpan(txtConsole, 6);
             txtConsole.ScrollBars = ScrollBars.Vertical;
-            txtConsole.Size = new Size(1001, 703);
+            txtConsole.Size = new Size(619, 786);
             txtConsole.TabIndex = 1;
             txtConsole.WordWrap = false;
             // 
             // btnClearText
             // 
-            btnClearText.Location = new Point(3, 61);
+            btnClearText.Location = new Point(3, 683);
             btnClearText.Name = "btnClearText";
             btnClearText.Size = new Size(122, 23);
             btnClearText.TabIndex = 2;
@@ -73,7 +74,7 @@
             // 
             // btnRegisterTerminal
             // 
-            btnRegisterTerminal.Location = new Point(3, 32);
+            btnRegisterTerminal.Location = new Point(3, 3);
             btnRegisterTerminal.Name = "btnRegisterTerminal";
             btnRegisterTerminal.Size = new Size(122, 23);
             btnRegisterTerminal.TabIndex = 3;
@@ -86,10 +87,10 @@
             tableLayoutPanel1.ColumnCount = 2;
             tableLayoutPanel1.ColumnStyles.Add(new ColumnStyle());
             tableLayoutPanel1.ColumnStyles.Add(new ColumnStyle());
-            tableLayoutPanel1.Controls.Add(btnRegisterTerminal, 0, 1);
             tableLayoutPanel1.Controls.Add(txtConsole, 1, 0);
-            tableLayoutPanel1.Controls.Add(btnClearText, 0, 2);
-            tableLayoutPanel1.Controls.Add(btnPingTheServer, 0, 0);
+            tableLayoutPanel1.Controls.Add(btnPingTheServer, 0, 1);
+            tableLayoutPanel1.Controls.Add(btnRegisterTerminal, 0, 0);
+            tableLayoutPanel1.Controls.Add(btnClearText, 0, 5);
             tableLayoutPanel1.Dock = DockStyle.Fill;
             tableLayoutPanel1.Location = new Point(0, 0);
             tableLayoutPanel1.Name = "tableLayoutPanel1";
@@ -100,15 +101,27 @@
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
-            tableLayoutPanel1.Size = new Size(753, 699);
+            tableLayoutPanel1.Size = new Size(753, 792);
             tableLayoutPanel1.TabIndex = 4;
+            // 
+            // statusStrip1
+            // 
+            statusStrip1.Location = new Point(0, 770);
+            statusStrip1.Name = "statusStrip1";
+            statusStrip1.Size = new Size(753, 22);
+            statusStrip1.TabIndex = 5;
+            statusStrip1.Text = "statusStrip1";
             // 
             // Client
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(753, 699);
+            ClientSize = new Size(753, 792);
+            Controls.Add(statusStrip1);
             Controls.Add(tableLayoutPanel1);
+            FormBorderStyle = FormBorderStyle.FixedSingle;
+            MaximizeBox = false;
+            MinimizeBox = false;
             Name = "Client";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "Client";
@@ -116,6 +129,7 @@
             tableLayoutPanel1.ResumeLayout(false);
             tableLayoutPanel1.PerformLayout();
             ResumeLayout(false);
+            PerformLayout();
         }
 
         #endregion
@@ -125,5 +139,6 @@
         private Button btnClearText;
         private Button btnRegisterTerminal;
         private TableLayoutPanel tableLayoutPanel1;
+        private StatusStrip statusStrip1;
     }
 }
