@@ -6,11 +6,13 @@ using System.Windows.Forms;
 using System.Security.Cryptography;
 using System.Configuration;
 using System.Diagnostics;
+using System.Security.Cryptography.Xml;
 
 namespace Client
 {
     public partial class Client : Form
     {
+        // Default Encryption Keys - Here for testing will move to a another location such as registry/config file
         private static readonly string defaultKey = "nA3WcZy/RTeVhhxMSn0mzPU32S2x9oof1fOZekHwTfQ=";
         private static readonly string defaultIV = "gzGFRb/FUf7awGZ3oSAjEw==";
 
@@ -36,17 +38,25 @@ namespace Client
 
         #endregion
 
-        #region Terminal Registration
+        private void Client_Load(object sender, EventArgs e)
+        {
+            // If the configuration contains Keys and IV's set the EncryptionKey and EncryptionIV strings
+            if (!string.IsNullOrEmpty(Properties.Settings.Default.Key)) { EncryptionKey = Properties.Settings.Default.Key; };
+            if (!string.IsNullOrEmpty(Properties.Settings.Default.IV)) { EncryptionIV = Properties.Settings.Default.IV; };
+        }
 
+        #region Terminal Registration (DONE)
         private async Task RegisterTerminalAsync()
         {
             try
             {
                 using (var client = new TcpClient())
                 {
+                    // Create Connection to the Server
                     await client.ConnectAsync("127.0.0.1", 8080);
                     Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Connected to Server");
 
+                    // Open Datastream
                     var stream = client.GetStream();
                     Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Initiating Data Stream");
 
@@ -111,6 +121,7 @@ namespace Client
 
                     stream.Close();
                     Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Closing Data Stream");
+
                     client.Close();
                     Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Terminating Connection To Server");
                 }
@@ -123,34 +134,61 @@ namespace Client
 
         #endregion
 
-        #region Ping Request
+        #region Ping Request (DONE)
 
         private async Task RequestPingAsync()
         {
+            EncryptionKey =  Properties.Settings.Default.Key;
+            EncryptionIV = Properties.Settings.Default.IV;
+
             try
             {
                 using (var client = new TcpClient())
                 {
                     await client.ConnectAsync("127.0.0.1", 8080);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Connected to Server");
+
                     var stream = client.GetStream();
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Initiating Data Stream");
 
                     // Send Ping Request encrypted
-                    var encryptedRequest = Environment.MachineName + "," + EncryptString(true, "PING_SERVER", EncryptionKey, EncryptionIV);
-                    var requestBytes = Encoding.UTF8.GetBytes(encryptedRequest);
+                    var request = DateTime.Now.ToString("G") + "," + Environment.MachineName + "," + EncryptString(true, "PING_SERVER", EncryptionKey, EncryptionIV);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Encrypting 'PING_SERVER' Message To Server");
+
+                    var requestBytes = Encoding.UTF8.GetBytes(request);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Encoding Message To Server");
+
                     await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
-                    Log("[ " + DateTime.Now.ToString("G") + " ]  " + "PING_SERVER request sent.");
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Sending Message To The Server");
 
                     // Handle Ping request response from the server
                     var responseBuffer = new byte[256];
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Creating Buffer For Server Response");
+
                     var bytesRead = await stream.ReadAsync(responseBuffer, 0, responseBuffer.Length);
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Recieveing Message From Server");
+
                     if (bytesRead > 0)
                     {
-                        var response = DecryptString(Encoding.UTF8.GetString(responseBuffer, 0, bytesRead), EncryptionKey, EncryptionIV);
-                        Log("[ " + DateTime.Now.ToString("G") + " ]  " + response);
+                        //Create a new byte array fo rthe response removing any Padded bytes
+                        byte[] response = new byte[bytesRead];
+                        Array.Copy(responseBuffer, response, bytesRead);
+                        Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Removed Padded bytes and created new byte array");
+
+                        var encryptedResponse = Encoding.UTF8.GetString(response);
+                        Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Decode Message From Server");
+
+                        var decryptedResponse = DecryptString(encryptedResponse, EncryptionKey, EncryptionIV);
+                        Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Decrypting Message From Server"); ;
+
+                        Log("[ " + DateTime.Now.ToString("G") + " ] :: [ SERVER ]" + decryptedResponse);
                     }
 
                     stream.Close();
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Closing Data Stream");
+
                     client.Close();
+                    Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Terminating Connection To Server");
                 }
             }
             catch (Exception ex)
@@ -165,72 +203,91 @@ namespace Client
 
         private static string EncryptString(bool defaultEncryption, string message, string key, string iv)
         {
-
-            // Get Set Key
+            // If defaultEncryption is true, use default key and IV values
             if (defaultEncryption)
             {
                 key = defaultKey;
                 iv = defaultIV;
             }
 
+            // Validate that message, key, and IV are not null or empty
             if (string.IsNullOrEmpty(message)) { throw new ArgumentNullException(nameof(message)); }
             if (string.IsNullOrEmpty(key)) { throw new ArgumentNullException(nameof(key)); }
             if (string.IsNullOrEmpty(iv)) { throw new ArgumentNullException(nameof(iv)); }
 
+            // Convert the key and IV from Base64 strings to byte arrays
             byte[] keyBytes = Convert.FromBase64String(key);
             byte[] ivBytes = Convert.FromBase64String(iv);
             byte[] encryptedText;
 
+            // Create an AES encryption object
             using (Aes aes = Aes.Create())
             {
-                aes.Key = keyBytes;
-                aes.IV = ivBytes;
+                aes.Key = keyBytes;   // Set the AES key -- Default or Passed in
+                aes.IV = ivBytes;     // Set the AES IV -- Default or Passed in
+
+                // Create an encryptor to perform the stream transformation
                 ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
 
-                using (var msEncrypt = new System.IO.MemoryStream())
+                // Create a memory stream to hold the encrypted data
+                using (var msEncrypt = new MemoryStream())
                 {
+                    // Create a crypto stream that links data to the encryptor
                     using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
                     {
-                        using (var swEncrypt = new System.IO.StreamWriter(csEncrypt))
+                        // Create a stream writer to write the plain text data to the crypto stream
+                        using (var swEncrypt = new StreamWriter(csEncrypt))
                         {
-                            swEncrypt.Write(message);
+                            swEncrypt.Write(message);  // Write the message to be encrypted
                         }
+                        // After writing, the memory stream contains the encrypted data
                         encryptedText = msEncrypt.ToArray();
                     }
                 }
             }
 
+            // Convert the encrypted byte array to a Base64 string and return it
             return Convert.ToBase64String(encryptedText);
         }
 
+
         private static string DecryptString(string cipherText, string key, string iv)
         {
+            // Validate that the cipherText is not null or empty
             if (string.IsNullOrEmpty(cipherText))
                 throw new ArgumentNullException(nameof(cipherText));
 
+            // Convert the key and IV from Base64 strings to byte arrays
             byte[] keyBytes = Convert.FromBase64String(key);
             byte[] ivBytes = Convert.FromBase64String(iv);
+            // Convert the cipherText from a Base64 string to a byte array
             byte[] buffer = Convert.FromBase64String(cipherText);
 
-            using (Aes aesAlg = Aes.Create())
+            // Create an AES decryption object
+            using (Aes aes = Aes.Create())
             {
-                aesAlg.Key = keyBytes;
-                aesAlg.IV = ivBytes;
-                ICryptoTransform decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV);
+                aes.Key = keyBytes;   // Key passed in from properties Unique to the terminal 
+                aes.IV = ivBytes;     // IV passed in from properties Unique to the terminal
 
+                // Create a decryptor to perform the stream transformation
+                ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+
+                // Create a memory stream to hold the encrypted data
                 using (var msDecrypt = new System.IO.MemoryStream(buffer))
                 {
+                    // Create a crypto stream that links data to the decryptor
                     using (var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read))
                     {
+                        // Create a stream reader to read the decrypted data from the crypto stream
                         using (var srDecrypt = new System.IO.StreamReader(csDecrypt))
                         {
+                            // Read the decrypted data and return it as a string
                             return srDecrypt.ReadToEnd();
                         }
                     }
                 }
             }
         }
-
         #endregion
 
         #region Logging
@@ -268,12 +325,6 @@ namespace Client
         }
 
         #endregion
-
-        private void Client_Load(object sender, EventArgs e)
-        {
-            EncryptionKey = Properties.Settings.Default.Key;
-            EncryptionIV = Properties.Settings.Default.IV;
-        }
     
     }
 }
