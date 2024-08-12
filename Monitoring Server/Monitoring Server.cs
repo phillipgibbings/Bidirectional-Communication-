@@ -212,48 +212,19 @@ namespace Monitoring_Server
 
 
                 var decryptedMessage = DecryptString(true, encryptedMessage, terminal.EncryptionKey, terminal.EncryptionIV);
-                //var requestType = decryptedRequest.Split(' ')[0];
 
                 switch (decryptedMessage)
                 {
                     case "PING_SERVER":
                         await PingServerRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
                         break;
+                    case "UPDATE_DATABASE":
+                        break;
                     default:
                         await HandleUnknownRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
                         break;
                 }
 
-
-
-                //var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-                //if (bytesRead > 0)
-                //{
-                //    //initialRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                //    //var parts = initialRequest.Split(',');
-                //    //var dateTime = parts[0];
-                //    //var clientComputerName = parts[1];
-                //    //var encryptedRequest = parts[2];
-
-                //    //Debug.WriteLine(terminal.TerminalId);
-                //    //Debug.WriteLine(terminal.IPAddress);
-                //    //Debug.WriteLine(terminal.EncryptionKey);
-                //    //Debug.WriteLine(terminal.EncryptionIV);
-
-
-                //    //var decryptedMessage = DecryptString(true, encryptedMessage, terminal.EncryptionKey, terminal.EncryptionIV);
-                //    ////var requestType = decryptedRequest.Split(' ')[0];
-
-                //    //switch (decryptedMessage)
-                //    //{
-                //    //    case "PING_SERVER":
-                //    //        await PingServerRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
-                //    //        break;
-                //    //    default:
-                //    //        await HandleUnknownRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
-                //    //        break;
-                //    //}
-                //}
             }
             catch (Exception ex)
             {
@@ -294,12 +265,13 @@ namespace Monitoring_Server
                         // Add the terminal to the database
                         AddTerminalToDatabase(clientComputerName, ((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString(), newKey, newIV);
                         LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Registered {clientComputerName} Successfully");
+
                         // Acknowledge the connection and send the new Key and IV
                         var message = $"Terminal registered successfully,Key={newKey},IV={newIV}";
-                        var encryptedAckMessage = EncryptString(true, message, string.Empty, string.Empty);
-                        var ackBytes = Encoding.UTF8.GetBytes(encryptedAckMessage);
+                        var encryptedMessage = EncryptString(true, message, string.Empty, string.Empty);
+                        var responseBytes = Encoding.UTF8.GetBytes(encryptedMessage);
                         LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Sending success response & new Encryption keys to {clientComputerName}");
-                        await stream.WriteAsync(ackBytes, 0, ackBytes.Length, cancellationToken).ConfigureAwait(false);
+                        await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
                     }
                 }
                 else
@@ -314,10 +286,10 @@ namespace Monitoring_Server
             {
                 // Acknowledge that the terminal is already registered
                 var message = "Terminal already registered";
-                var encryptedAckMessage = EncryptString(true, message, string.Empty, string.Empty);
-                var ackBytes = Encoding.UTF8.GetBytes(encryptedAckMessage);
+                var encryptedMessage = EncryptString(true, message, string.Empty, string.Empty);
+                var responseBytes = Encoding.UTF8.GetBytes(encryptedMessage);
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Sending terminal already registered response to {clientComputerName}");
-                await stream.WriteAsync(ackBytes, 0, ackBytes.Length, cancellationToken).ConfigureAwait(false);
+                await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -332,9 +304,9 @@ namespace Monitoring_Server
                     var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
                     if (bytesRead > 0)
                     {
-                        var encryptedRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        var decryptedRequest = DecryptString(true, encryptedRequest, terminal.EncryptionKey, terminal.EncryptionIV);
-                        if (decryptedRequest == "PING_SERVER")
+                        var encryptedMessage = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                        var decryptedMessage = DecryptString(true, encryptedMessage, terminal.EncryptionKey, terminal.EncryptionIV);
+                        if (decryptedMessage == "PING_SERVER")
                         {
                             await PingServerRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
                         }
