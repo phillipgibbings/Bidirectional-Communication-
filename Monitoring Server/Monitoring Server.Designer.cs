@@ -51,7 +51,7 @@
             menuStrip1.Items.AddRange(new ToolStripItem[] { menuStartServer, clearTextToolStripMenuItem, settingsToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
-            menuStrip1.Size = new Size(1179, 24);
+            menuStrip1.Size = new Size(1174, 24);
             menuStrip1.TabIndex = 1;
             menuStrip1.Text = "menuStrip1";
             // 
@@ -83,7 +83,7 @@
             tabcServerConsole.Location = new Point(0, 24);
             tabcServerConsole.Name = "tabcServerConsole";
             tabcServerConsole.SelectedIndex = 0;
-            tabcServerConsole.Size = new Size(1179, 612);
+            tabcServerConsole.Size = new Size(1174, 717);
             tabcServerConsole.TabIndex = 2;
             // 
             // tpLogs
@@ -92,7 +92,7 @@
             tpLogs.Location = new Point(4, 24);
             tpLogs.Name = "tpLogs";
             tpLogs.Padding = new Padding(3);
-            tpLogs.Size = new Size(1171, 584);
+            tpLogs.Size = new Size(1166, 689);
             tpLogs.TabIndex = 0;
             tpLogs.Text = "Logs";
             tpLogs.UseVisualStyleBackColor = true;
@@ -107,7 +107,7 @@
             txtMonitoringServer.Multiline = true;
             txtMonitoringServer.Name = "txtMonitoringServer";
             txtMonitoringServer.ScrollBars = ScrollBars.Vertical;
-            txtMonitoringServer.Size = new Size(1165, 578);
+            txtMonitoringServer.Size = new Size(1160, 683);
             txtMonitoringServer.TabIndex = 1;
             txtMonitoringServer.WordWrap = false;
             // 
@@ -137,9 +137,10 @@
             // statusStrip1
             // 
             statusStrip1.Items.AddRange(new ToolStripItem[] { lblServerStatus });
-            statusStrip1.Location = new Point(0, 614);
+            statusStrip1.Location = new Point(0, 741);
             statusStrip1.Name = "statusStrip1";
-            statusStrip1.Size = new Size(1179, 22);
+            statusStrip1.Size = new Size(1174, 22);
+            statusStrip1.SizingGrip = false;
             statusStrip1.TabIndex = 3;
             statusStrip1.Text = "statusStrip1";
             // 
@@ -153,10 +154,10 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1179, 636);
-            Controls.Add(statusStrip1);
+            ClientSize = new Size(1174, 763);
             Controls.Add(tabcServerConsole);
             Controls.Add(menuStrip1);
+            Controls.Add(statusStrip1);
             MainMenuStrip = menuStrip1;
             Name = "MonitoringServer";
             Text = "Monitoring Server";

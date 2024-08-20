@@ -34,6 +34,7 @@
             btnRegisterTerminal = new Button();
             tableLayoutPanel1 = new TableLayoutPanel();
             statusStrip1 = new StatusStrip();
+            btnUpdateDatabase = new Button();
             tableLayoutPanel1.SuspendLayout();
             SuspendLayout();
             // 
@@ -56,15 +57,15 @@
             txtConsole.Location = new Point(131, 3);
             txtConsole.Multiline = true;
             txtConsole.Name = "txtConsole";
-            tableLayoutPanel1.SetRowSpan(txtConsole, 6);
+            tableLayoutPanel1.SetRowSpan(txtConsole, 29);
             txtConsole.ScrollBars = ScrollBars.Vertical;
-            txtConsole.Size = new Size(619, 786);
+            txtConsole.Size = new Size(909, 883);
             txtConsole.TabIndex = 1;
             txtConsole.WordWrap = false;
             // 
             // btnClearText
             // 
-            btnClearText.Location = new Point(3, 683);
+            btnClearText.Location = new Point(3, 863);
             btnClearText.Name = "btnClearText";
             btnClearText.Size = new Size(122, 23);
             btnClearText.TabIndex = 2;
@@ -90,35 +91,72 @@
             tableLayoutPanel1.Controls.Add(txtConsole, 1, 0);
             tableLayoutPanel1.Controls.Add(btnPingTheServer, 0, 1);
             tableLayoutPanel1.Controls.Add(btnRegisterTerminal, 0, 0);
-            tableLayoutPanel1.Controls.Add(btnClearText, 0, 5);
+            tableLayoutPanel1.Controls.Add(btnClearText, 0, 28);
+            tableLayoutPanel1.Controls.Add(btnUpdateDatabase, 0, 2);
             tableLayoutPanel1.Dock = DockStyle.Fill;
             tableLayoutPanel1.Location = new Point(0, 0);
             tableLayoutPanel1.Name = "tableLayoutPanel1";
-            tableLayoutPanel1.RowCount = 6;
+            tableLayoutPanel1.RowCount = 24;
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
-            tableLayoutPanel1.Size = new Size(753, 792);
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle());
+            tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Absolute, 22F));
+            tableLayoutPanel1.Size = new Size(1043, 889);
             tableLayoutPanel1.TabIndex = 4;
             // 
             // statusStrip1
             // 
-            statusStrip1.Location = new Point(0, 770);
+            statusStrip1.Location = new Point(0, 889);
             statusStrip1.Name = "statusStrip1";
-            statusStrip1.Size = new Size(753, 22);
+            statusStrip1.RenderMode = ToolStripRenderMode.Professional;
+            statusStrip1.Size = new Size(1043, 22);
+            statusStrip1.SizingGrip = false;
             statusStrip1.TabIndex = 5;
             statusStrip1.Text = "statusStrip1";
+            // 
+            // btnUpdateDatabase
+            // 
+            btnUpdateDatabase.Location = new Point(3, 61);
+            btnUpdateDatabase.Name = "btnUpdateDatabase";
+            btnUpdateDatabase.Size = new Size(122, 23);
+            btnUpdateDatabase.TabIndex = 4;
+            btnUpdateDatabase.Text = "Update DB";
+            btnUpdateDatabase.UseVisualStyleBackColor = true;
+            btnUpdateDatabase.Click += btnUpdateDatabase_Click;
             // 
             // Client
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(753, 792);
-            Controls.Add(statusStrip1);
+            ClientSize = new Size(1043, 911);
             Controls.Add(tableLayoutPanel1);
+            Controls.Add(statusStrip1);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -140,5 +178,6 @@
         private Button btnRegisterTerminal;
         private TableLayoutPanel tableLayoutPanel1;
         private StatusStrip statusStrip1;
+        private Button btnUpdateDatabase;
     }
 }

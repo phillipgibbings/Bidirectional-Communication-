@@ -15,14 +15,22 @@ namespace Monitoring_Server
 {
     public partial class MonitoringServer : Form
     {
-        private TcpListener _server;
-        private CancellationTokenSource _cancellationTokenSource;
+        // Networking
+        private TcpListener? _server;
+        private CancellationTokenSource? _cancellationTokenSource;
+
+        // Server running status
         private bool _isRunning = false;
+
+        // Database
         private static readonly string ConnectionString = "Data Source=terminals.db;";
 
         // Default Encryption Keys - Here for testing will move to a another location such as registry/config file
         private static readonly string defaultKey = "nA3WcZy/RTeVhhxMSn0mzPU32S2x9oof1fOZekHwTfQ=";
         private static readonly string defaultIV = "gzGFRb/FUf7awGZ3oSAjEw==";
+
+        //Heartbeats
+        private readonly Dictionary<string, DateTime> _lastHeartbeatReceived = new Dictionary<string, DateTime>();
 
         public MonitoringServer()
         {
@@ -35,25 +43,33 @@ namespace Monitoring_Server
         {
             // Reset Server Status Label
             lblServerStatus.Text = string.Empty;
+
+            // Start Hearbeat monitor
+            MonitorHeartbeat();
+
+            // Start the server
+            StartServer();
         }
 
-        //Client Listener
-        private async Task ListenForClients(CancellationToken cancellationToken)
+        #region Monitoring, Terminal Listener / Heartbeat Monitor
+
+        //Terminal Listener
+        private async Task ListenForTerminals(CancellationToken cancellationToken)
         {
-            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: [ SERVER ] " + $"Listening server: {IPAddress.Any}");
+            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Listening on: {IPAddress.Any}");
 
             // Loop check while cancel request is false
             while (!cancellationToken.IsCancellationRequested)
             {
                 try
                 {
-                    // While listener is not null action the handle client
-                    var client = await _server.AcceptTcpClientAsync().ConfigureAwait(false);
-                    if (client != null)
+                    // While listener is not null action the handle Terminal
+                    var terminal = await _server.AcceptTcpClientAsync().ConfigureAwait(false);
+                    if (terminal != null)
                     {                        
-                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: [ SERVER ] " + $"Terminal Connected :: {client}");
-                        // Run handle client
-                        await Task.Run(() => HandleClient(client, cancellationToken));
+                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Terminal Connected");
+                        // Run handle terminal
+                        await Task.Run(() => HandleTerminal(terminal, cancellationToken));
 
                     }
                 }
@@ -75,181 +91,236 @@ namespace Monitoring_Server
             }
         }
 
-        private async Task HandleClient(TcpClient client, CancellationToken cancellationToken)
+
+        //Heartbeat Monitor
+        private void MonitorHeartbeat()
         {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: MonitorHeartbeat started.");
+
+                    while (_isRunning)
+                    {
+                        var now = DateTime.Now;
+                        LogMessage("[ " + now.ToString("G") + " ] :: Checking heartbeats...");
+
+                        foreach (var terminal in _lastHeartbeatReceived.Keys.ToList())
+                        {
+                            try
+                            {
+                                //LogMessage($"[ {now:G} ] :: Checking terminal {terminal}, last heartbeat at {_lastHeartbeatReceived[terminal]}.");
+                                if (now - _lastHeartbeatReceived[terminal] > TimeSpan.FromMinutes(5))
+                                {
+                                    LogMessage($"[ {now:G} ] :: [ WARNING ] :: Communication lost to {terminal}. Last heartbeat received at {_lastHeartbeatReceived[terminal]}.");
+                                    // Handle lost communication, e.g., send an alert, remove from active terminals, etc.
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                LogMessage($"[ {now:G} ] :: Error while processing terminal {terminal}: {ex.Message}");
+                                // Optionally rethrow or handle the exception
+                            }
+                        }
+
+                        //LogHeartbeatDictionary(); // Log the dictionary contents
+
+                        await Task.Delay(TimeSpan.FromMinutes(60)); // Check every minute
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"[ {DateTime.Now:G} ] :: Error in MonitorHeartbeat loop: {ex.Message}");
+                    // Optionally handle the exception (e.g., restart the monitoring, alert, etc.)
+                }
+                finally
+                {
+                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: MonitorHeartbeat stopped.");
+                }
+            });
+        }
+        #endregion
+
+        #region Terminal Handler For Non/Default Encrypted Requests
+        private async Task HandleTerminal(TcpClient terminal, CancellationToken cancellationToken)
+        {
+            var key = string.Empty;
+            var iv = string.Empty;
+            string decryptedRequest;
+            bool defaultKeysRequired;
+ 
             try
             {
-                using (client)
+                using (terminal)
                 {
-                    // Connect to client stream
-                    var stream = client.GetStream();
-                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Connecting to client data stream");
+                    var stream = terminal.GetStream(); // Open Stream from the terminal
+                    var buffer = new byte[256]; // Create a buffer to store the byte data
+                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false); // Store the buffered bytes in a variable
 
-                    // Create buffer
-                    var buffer = new byte[256];
-                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Creating buffer");
-
-                    // Read the client's initial message
-                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Reading Encoded Message");
-                    if (bytesRead > 0)
+                    if (bytesRead > 0) // if bytes read are greater than 0, action this code
                     {
-                        // Decode message from bytes to string
-                        var initialRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Decoding Message");
 
-                        // Spilt message into 3 parts -- TERMINAL ID, DATE/TIME, MESSAGE 
-                        var parts = initialRequest.Split(',');
-                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Message Received From: {parts[1]} -- " + $"Terminal Date & Time: {parts[0]} -- " + $"Terminal Message: {parts[2]}");
+                        var initialRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead); // Convert recieved bytes back into a string
+                        var requestParts = initialRequest.Split(','); // split the message into its parts
 
-                        // Check Message has 3 parts else error and send response
-                        if (parts.Length < 3)
+                        if (requestParts.Length < 3) // if theres not 3 parts to the message return a error and exit the function
                         {
-                            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Invalid Message Format: " + initialRequest);
-                            await SendErrorResponse(stream, true, "Invalid Message format", string.Empty, string.Empty, cancellationToken);
+                            await SendErrorResponse(stream, "Invalid Message format", true, defaultKey, defaultIV, cancellationToken);
                             return;
                         }
 
-                        // Set each part of message to own variable
-                        var dateTime = parts[0];
-                        var clientComputerName = parts[1];
-                        var encryptedMessage = parts[2];
+                        var dateTime = requestParts[0]; // Set Date Time
+                        var terminalName = requestParts[1]; // Set Terminal Name
+                        var encryptedMessage = requestParts[2]; // Set encrypted Message
 
-                        // check encrypted message isnt empty, if it is error and send a response
-                        if (string.IsNullOrEmpty(encryptedMessage))
+                        // If any of the parts are null or empty return a invalid request error and exit the function
+                        if (string.IsNullOrEmpty(encryptedMessage) || string.IsNullOrEmpty(terminalName) || !DateTime.TryParse(dateTime, out DateTime parsedDateTime))
                         {
-                            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Encrypted Message is empty.");
-                            await SendErrorResponse(stream, true, "Message is null or empty", string.Empty, string.Empty, cancellationToken);
+                            await SendErrorResponse(stream, "Invalid request data", true, defaultKey, defaultIV, cancellationToken);
                             return;
                         }
 
-                        // Check terminal isnt empty if it is error and send response
-                        if (string.IsNullOrEmpty(clientComputerName))
+                        var terminalID = GetTerminalById(terminalName); // Get the terminal data from the DB if it exists
+
+                        // If terminalID returns null use default keys, if terminalID returns ok use the terminal specific keys
+                        if (terminalID == null) 
                         {
-                            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Terminal ID is null or empty.");
-                            await SendErrorResponse(stream, true, "Terminal ID is null or empty", string.Empty, string.Empty, cancellationToken);
+                            key = defaultKey;
+                            iv = defaultIV;
+                            defaultKeysRequired = true;
+                        }
+                        else
+                        {
+                            key = terminalID.EncryptionKey;
+                            iv = terminalID.EncryptionIV;
+                            defaultKeysRequired = false;
+                        }
+
+                        // Attempt to decrypt the recieved message
+                        try
+                        {
+                            decryptedRequest = DecryptString(encryptedMessage, key, iv);
+                            //Debug.WriteLine($"SERVER :: {encryptedMessage} :: KEY :: {key} :: IV :: {iv}");
+                        }
+                        catch (Exception ex)
+                        {
+                            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Decryption failed: " + ex.Message);
+                            await SendErrorResponse(stream, "Decryption failed", defaultKeysRequired, key, iv, cancellationToken);
                             return;
                         }
 
-                        // chekc date time provided is in a valid format or error and send response
-                        if (!DateTime.TryParse(dateTime, out DateTime parsedDateTime))
-                        {
-                            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Date Time incorrect: " + dateTime);
-                            await SendErrorResponse(stream, true, "Date Time incorrect", string.Empty, string.Empty, cancellationToken);
-                            return;
-                        }
-
-                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Decrypting {client} Message");
-
-                        // This will attempt to decrypt the message using the Default Keys, if successful message will be "REGISTER_TERMINAL" --
-                        // if not it will hand the message to a secondary decrypt function via the switch case to decode message using the Terminals own keys
-                        var decryptedRequest = DecryptString(true, encryptedMessage, string.Empty, string.Empty);
-
-                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Message: " + decryptedRequest);
-
-                        // Action the Decrypted message
                         switch (decryptedRequest)
                         {
-                            case "REGISTER_TERMINAL":
-                                await HandleRegisterTerminalRequest(client, stream, clientComputerName, cancellationToken);
-                                break;
-                            default:
-                                // Retrieve terminal details from the database
-                                var terminal = GetTerminalById(clientComputerName);
+                            case "HEARTBEAT":
+                                var responseMessage = string.Empty;
+                                var heartbeatResponse = await TerminalHeartbeatRequest(terminalName);
 
-                                // if terminal exists, run Message though the decrypt process
-                                if (terminal != null)
+                                if (heartbeatResponse.Contains("Terminal not registered"))
                                 {
-                                    // Process encrypted requests with the requesting terminals unique keys
-                                    await ProcessEncryptedRequest(stream, encryptedMessage, terminal, cancellationToken);
+                                    responseMessage = heartbeatResponse;
+                                    defaultKeysRequired = true;
+                                    key = defaultKey;
+                                    iv = defaultIV;
+
+                                }
+                                else if (heartbeatResponse.Contains("Heartbeat received"))
+                                {
+                                    responseMessage = heartbeatResponse;
+                                    defaultKeysRequired = false;
+                                }
+
+                                var encryptedResponse = defaultKeysRequired + "," + EncryptString(responseMessage, key, iv);
+                                var responseBytes = Encoding.UTF8.GetBytes(encryptedResponse);
+                                await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
+                                break;
+
+                            case "REGISTER_TERMINAL":
+                                await RegisterTerminalRequest(terminal, stream, terminalName, (IPEndPoint)terminal.Client.RemoteEndPoint, cancellationToken);
+                                break;
+
+                            default:
+                                if (terminalID != null)
+                                {
+                                    await ProcessEncryptedRequest(stream, encryptedMessage, terminalID, cancellationToken);
                                 }
                                 else
                                 {
-                                    //  Log terminal error and send error response
-                                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Terminal not registered: {clientComputerName}");
-                                    await SendErrorResponse(stream, true, "Terminal not registered", string.Empty, string.Empty, cancellationToken); // Use some default or secure response
+                                    await SendErrorResponse(stream, "Terminal not registered", true, defaultKey, defaultIV, cancellationToken);
                                 }
                                 break;
                         }
                     }
-                    else
+                    else // Bytes were less than 0 log message to server console
                     {
                         LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Received empty request.");
+                        await SendErrorResponse(stream, "Server Error - ", true, defaultKey, defaultIV, cancellationToken);
                     }
                 }
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException ex)
             {
-                // Log error with client disconnecting
-                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Client connection was closed.");
-                await SendErrorResponse(client.GetStream(), true, "Server Error - Connection terminated or closed", string.Empty, string.Empty, cancellationToken);
-            }
-            catch (IOException ex)
-            {
-                // Log Error for Inpt Oupt Operations
-                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "IOException in HandleClient: " + ex.Message);
-                await SendErrorResponse(client.GetStream(), true, "Server Error - IO Exception Error", string.Empty, string.Empty, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-
-                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Exception in HandleClient: " + ex.Message);
-                await SendErrorResponse(client.GetStream(), true, "Server Error - Exception Error", string.Empty, string.Empty, cancellationToken);
-            }
-        }
-
-
-        private async Task ProcessEncryptedRequest(NetworkStream stream, string encryptedMessage, Terminal terminal, CancellationToken cancellationToken)
-        {
-            try
-            {
-                var buffer = new byte[256];
-
-                Debug.WriteLine(terminal.TerminalId);
-                Debug.WriteLine(terminal.IPAddress);
-                Debug.WriteLine(terminal.EncryptionKey);
-                Debug.WriteLine(terminal.EncryptionIV);
-
-
-                var decryptedMessage = DecryptString(true, encryptedMessage, terminal.EncryptionKey, terminal.EncryptionIV);
-
-                switch (decryptedMessage)
-                {
-                    case "PING_SERVER":
-                        await PingServerRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
-                        break;
-                    case "UPDATE_DATABASE":
-                        break;
-                    default:
-                        await HandleUnknownRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
-                        break;
-                }
+                // pass error back using default encryption
+                var stream = terminal.GetStream();
+                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Terminal Connection Terminated: " + ex.Message);
+                await SendErrorResponse(stream, "Server Error - Exception Error", true, defaultKey, defaultIV, cancellationToken);
 
             }
             catch (Exception ex)
             {
-                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Error processing encrypted request: " + ex.Message);
-                await SendErrorResponse(stream,false, "Error processing encrypted request", terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
+                // pass error back using default encryption
+                var stream = terminal.GetStream();
+                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Exception in HandleTerminal: " + ex.Message);
+                await SendErrorResponse(stream, "Server Error - Exception in HandleTerminal: " + ex.Message, true, defaultKey, defaultIV, cancellationToken);
             }
         }
+        #endregion
 
-        private async Task HandleRegisterTerminalRequest(TcpClient client, NetworkStream stream, string clientComputerName, CancellationToken cancellationToken)
+        #region Heartbeat
+        private async Task<string> TerminalHeartbeatRequest(string terminalComputerName)
         {
-            if (clientComputerName == null)
+            var terminalID = GetTerminalById(terminalComputerName);
+
+            if (terminalID == null)
             {
-                await SendErrorResponse(stream, true, "Invalid Terminal", string.Empty, string.Empty, cancellationToken);
+                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Terminal {terminalComputerName} is not registered. Heartbeat ignored.");
+                return "Terminal not registered";
+            }
+
+            if (_lastHeartbeatReceived.ContainsKey(terminalComputerName))
+            {
+                _lastHeartbeatReceived[terminalComputerName] = DateTime.Now;
+                //LogHeartbeatDictionary();
+            }
+            else
+            {
+                _lastHeartbeatReceived.Add(terminalComputerName, DateTime.Now);
+                //LogHeartbeatDictionary();
+            }
+
+            LogHeartbeat("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Heartbeat received from {terminalComputerName}");
+            return "Heartbeat received";
+        }
+        #endregion
+
+        #region Terminal Registration
+        private async Task RegisterTerminalRequest(TcpClient terminal, NetworkStream stream, string terminalComputerName, IPEndPoint? remoteTerminal, CancellationToken cancellationToken)
+        {
+            if (terminalComputerName == null)
+            {
+                await SendErrorResponse(stream, "Invalid Terminal Name", true, defaultKey, defaultIV, cancellationToken);
                 return;
             }
 
-            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Request to register terminal: " + clientComputerName);
+            LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Request to register terminal: " + terminalComputerName);
 
-            var terminal = GetTerminalById(clientComputerName);
+            var terminalID = GetTerminalById(terminalComputerName);
             LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Checking if terminal exists");
-            if (terminal == null)
+            if (terminalID == null)
             {
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Terminal does not exist, Prompt to add terminal");
                 // Prompt the user to add the terminal
-                var result = MessageBox.Show($"Do you wish to add this terminal: {clientComputerName}?", "New Terminal Detected", MessageBoxButtons.YesNo);
+                var result = MessageBox.Show($"Do you wish to add this terminal: {terminalComputerName}?", "New Terminal Detected", MessageBoxButtons.YesNo);
                 if (result == DialogResult.Yes)
                 {
                     LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "User selected \"Yes\" to prompt");
@@ -263,22 +334,23 @@ namespace Monitoring_Server
                         var newIV = Convert.ToBase64String(aes.IV);
 
                         // Add the terminal to the database
-                        AddTerminalToDatabase(clientComputerName, ((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString(), newKey, newIV);
-                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Registered {clientComputerName} Successfully");
+                        AddTerminalToDatabase(terminalComputerName, (remoteTerminal).Address.ToString(), newKey, newIV);
+                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Registered {terminalComputerName} Successfully");
 
                         // Acknowledge the connection and send the new Key and IV
                         var message = $"Terminal registered successfully,Key={newKey},IV={newIV}";
-                        var encryptedMessage = EncryptString(true, message, string.Empty, string.Empty);
+                        var encryptedMessage = true + "," + EncryptString(message, defaultKey, defaultIV);
                         var responseBytes = Encoding.UTF8.GetBytes(encryptedMessage);
-                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Sending success response & new Encryption keys to {clientComputerName}");
+                        LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Sending success response & new Encryption keys to {terminalComputerName}");
                         await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
                     }
                 }
                 else
                 {
                     // Close the connection if the user chooses not to add the terminal
-                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "User selecyed \"No\" to prompt");
-                    client.Close();
+                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "User selected \"No\" to prompt");
+                    terminal.Close();
+                    stream.Close();
                     return;
                 }
             }
@@ -286,53 +358,60 @@ namespace Monitoring_Server
             {
                 // Acknowledge that the terminal is already registered
                 var message = "Terminal already registered";
-                var encryptedMessage = EncryptString(true, message, string.Empty, string.Empty);
+                var encryptedMessage = EncryptString(message, string.Empty, string.Empty);
                 var responseBytes = Encoding.UTF8.GetBytes(encryptedMessage);
-                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Sending terminal already registered response to {clientComputerName}");
+                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Sending terminal already registered response to {terminalComputerName}");
                 await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
             }
         }
+        #endregion
 
-        private async Task HandlePingRequest(NetworkStream stream, string clientComputerName, CancellationToken cancellationToken)
+        #region Process Encrypted Requests
+        private async Task ProcessEncryptedRequest(NetworkStream stream, string encryptedMessage, Terminal terminalID, CancellationToken cancellationToken)
         {
-            var terminal = GetTerminalById(clientComputerName);
-            if (terminal != null)
+            if (terminalID == null)
             {
-                try
-                {
-                    var buffer = new byte[256];
-                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-                    if (bytesRead > 0)
-                    {
-                        var encryptedMessage = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        var decryptedMessage = DecryptString(true, encryptedMessage, terminal.EncryptionKey, terminal.EncryptionIV);
-                        if (decryptedMessage == "PING_SERVER")
-                        {
-                            await PingServerRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
-                        }
-                        else
-                        {
-                            await HandleUnknownRequest(stream, terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Error handling PING_SERVER request: " + ex.Message);
-                    await SendErrorResponse(stream, false, "Error handling PING_SERVER request", terminal.EncryptionKey, terminal.EncryptionIV, cancellationToken);
-                }
+                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: [ ERROR ]" + "ProcessEncryptedRequest - terminalID is null");
+                return;
             }
-            else
+
+
+            var decryptedMessage = string.Empty;
+            try
             {
-                await SendErrorResponse(stream, true, "Terminal not registered", string.Empty, string.Empty, cancellationToken); // Use some default or secure response
+                var buffer = new byte[256];
+                decryptedMessage = DecryptString(encryptedMessage, terminalID.EncryptionKey, terminalID.EncryptionIV);
+
+                var splitDecryptedMessage = decryptedMessage.Split(',');
+
+                switch (splitDecryptedMessage[0])
+                {
+                    case "PING_SERVER":
+                        await PingServerRequest(stream, terminalID.EncryptionKey, terminalID.EncryptionIV, cancellationToken);
+                        break;
+                    case "UPDATE_DATABASE":
+                        await UpdateDatabaseRequest(stream, decryptedMessage, terminalID.EncryptionKey, terminalID.EncryptionIV, cancellationToken);
+                        break;
+                    default:
+                        await HandleUnknownRequest(stream, terminalID.EncryptionKey, terminalID.EncryptionIV, cancellationToken);
+                        break;
+                }
+
+            }
+            catch (Exception ex)
+            {
+                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Error processing encrypted request: " + ex.Message);
+                await SendErrorResponse(stream, "Error processing encrypted request", false, terminalID.EncryptionKey, terminalID.EncryptionIV, cancellationToken);
             }
         }
+        #endregion
 
+        #region Ping Request
         private async Task PingServerRequest(NetworkStream stream, string key, string iv, CancellationToken cancellationToken)
         {
             try
             {
-                var response = EncryptString(false, "Ping Received", key, iv);
+                var response = EncryptString("Ping Received", key, iv);
                 var responseBytes = Encoding.UTF8.GetBytes(response);
                 await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Ping request handled.");
@@ -340,15 +419,64 @@ namespace Monitoring_Server
             catch (Exception ex)
             {
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Error handling PING_SERVER request: " + ex.Message);
-                await SendErrorResponse(stream, false, "Error handling PING_SERVER request", key, iv, cancellationToken);
+                await SendErrorResponse(stream, "Error handling PING_SERVER request", false, key, iv, cancellationToken);
             }
         }
+        #endregion
 
+        #region Update Database Request
+        private async Task UpdateDatabaseRequest(NetworkStream stream, string data, string key, string iv, CancellationToken cancellationToken)
+        {
+            var splitData = data.Split(',');
+
+            string tableToUpdate = splitData[1];
+            string columnToUpdate = splitData[2];
+            string columnUpdateValue =  splitData[3];
+            string recordID = splitData[4];
+            string recordValue = splitData[5];
+
+            try
+            {
+                if (UpdateTerminalDatabase(tableToUpdate, columnToUpdate, columnUpdateValue, recordID, recordValue))
+                {
+                    var response = EncryptString("Update database was Successful", key, iv);
+                    var responseBytes = Encoding.UTF8.GetBytes(response);
+                    await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
+                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Update Database handled.");
+                }
+                else
+                {
+                    var response = EncryptString("Unable to update the database", key, iv);
+                    var responseBytes = Encoding.UTF8.GetBytes(response);
+                    await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
+                    LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Update Database handled.");
+                }
+
+
+            }
+            catch (Exception ex)
+            {
+                LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Error handling PING_SERVER request: " + ex.Message);
+                await SendErrorResponse(stream, "Error handling UPDATE_DATABASE request", false, key, iv, cancellationToken);
+            }
+        }
+        #endregion
+
+
+
+
+
+
+
+
+
+
+        #region Unknown Request Handler
         private async Task HandleUnknownRequest(NetworkStream stream, string key, string iv, CancellationToken cancellationToken)
         {
             try
             {
-                var response = EncryptString(true, "Unknown request", key, iv);
+                var response = EncryptString("Unknown request", key, iv);
                 var responseBytes = Encoding.UTF8.GetBytes(response);
                 await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Unknown request received and handled.");
@@ -356,21 +484,17 @@ namespace Monitoring_Server
             catch (Exception ex)
             {
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Error handling unknown request: " + ex.Message);
-                await SendErrorResponse(stream, true, "Error handling unknown request", string.Empty, string.Empty, cancellationToken);
+                await SendErrorResponse(stream, "Error handling unknown request", true, defaultKey, defaultIV, cancellationToken);
             }
         }
+        #endregion
 
-        private async Task SendErrorResponse(NetworkStream stream, bool defaultEncryption, string errorMessage, string key, string iv, CancellationToken cancellationToken)
+        #region Error Response
+        private async Task SendErrorResponse(NetworkStream stream, string errorMessage, bool defaultKeysRequired, string key, string iv, CancellationToken cancellationToken)
         {
-            if (defaultEncryption)
-            {
-                key = defaultKey;
-                iv = defaultIV;
-            }
-
             try
             {
-                var response = EncryptString(true,errorMessage, key, iv);
+                var response = defaultKeysRequired + "," + EncryptString(errorMessage, key, iv);
                 var responseBytes = Encoding.UTF8.GetBytes(response);
                 await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
             }
@@ -379,8 +503,10 @@ namespace Monitoring_Server
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Error sending error response: " + ex.Message);
             }
         }
+        #endregion
 
-        private Terminal GetTerminalById(string terminalId)
+        #region Additional Functions
+        private Terminal? GetTerminalById(string terminalId)
         {
             using (var connection = new SqliteConnection(ConnectionString))
             {
@@ -400,7 +526,7 @@ namespace Monitoring_Server
                                 EncryptionKey = reader["EncryptionKey"].ToString(),
                                 EncryptionIV = reader["EncryptionIV"].ToString()
                             };
-                            
+
                         }
                         connection.Close();
                     }
@@ -409,16 +535,9 @@ namespace Monitoring_Server
             return null;
         }
 
-        private class Terminal
-        {
-            public string TerminalId { get; set; }
-            public string IPAddress { get; set; }
-            public string EncryptionKey { get; set; }
-            public string EncryptionIV { get; set; }
-        }
+        #endregion
 
-
-
+        #region Event Triggers & Functions
         private void btnStartServer_Click(object sender, EventArgs e)
         {
             if (!_isRunning)
@@ -434,8 +553,9 @@ namespace Monitoring_Server
                 lblServerStatus.Text = "Server isn't running";
             }
         }
+        #endregion
 
-        #region Start/Stop Server
+        #region Start and Stop Server
         private void StartServer()
         {
             if (_isRunning)
@@ -451,7 +571,7 @@ namespace Monitoring_Server
                 _server.Start();
                 _isRunning = true;
 
-                Task.Run(() => ListenForClients(_cancellationTokenSource.Token));
+                Task.Run(() => ListenForTerminals(_cancellationTokenSource.Token));
                 LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + "Started Server Successfully...");
             }
             catch (Exception ex)
@@ -484,19 +604,13 @@ namespace Monitoring_Server
 
         #region Encryption Functions
 
-        public static string EncryptString(bool defaultEncryption, string message, string key, string iv)
+        public static string EncryptString(string message, string key, string iv)
         {
             // Error out if message is null or empty
             if (string.IsNullOrEmpty(message)) { throw new ArgumentNullException(nameof(message)); }
 
-            // Check if default encyption is true, if true use default encryption keys
-            if (defaultEncryption) { key = defaultKey; iv = defaultIV; }
-
             try
             {
-                Debug.WriteLine($"ENCRYPT :: Encryption Key :: {key}");
-                Debug.WriteLine($"ENCRYPT :: Encryption IV :: {iv}");
-
                 byte[] keyBytes = Convert.FromBase64String(key);
                 byte[] ivBytes = Convert.FromBase64String(iv);
                 byte[] encrypted;
@@ -528,13 +642,11 @@ namespace Monitoring_Server
             }
         }
 
-        public static string DecryptString(bool defaultEncryption, string encryptedMessage, string key, string iv)
+        public static string DecryptString(string encryptedMessage, string key, string iv)
         {
             if (string.IsNullOrEmpty(encryptedMessage)) { throw new ArgumentNullException(nameof(encryptedMessage)); }
 
-            // Check if default encyption is true, if true use default encryption keys
-            if (defaultEncryption) { key = defaultKey; iv = defaultIV; }
-
+            Debug.Write($"Enc Key DecryptString\n{key}\n{iv}");
             try
             {
                 byte[] keyBytes = Convert.FromBase64String(key);
@@ -584,6 +696,7 @@ namespace Monitoring_Server
                 {
                     command.ExecuteNonQuery();
                 }
+                connection.Close();
             }
         }
 
@@ -603,11 +716,38 @@ namespace Monitoring_Server
                     command.Parameters.AddWithValue("@EncryptionIV", encryptionIV);
                     command.ExecuteNonQuery();
                 }
+                connection.Close();
             }
+        }
+
+        private bool UpdateTerminalDatabase(string tableToUpdate, string columnToUpdate, string columnUpdateValue, string recordID, string recordValue)
+        {
+            try
+            {
+                using (var connection = new SqliteConnection(ConnectionString))
+                {
+                    connection.Open();
+                    string updateQuery = @$"UPDATE {tableToUpdate} SET {columnToUpdate} = @columnUpdateValue WHERE {recordID} = @recordValue";
+
+                    using (var command = new SqliteCommand(updateQuery, connection))
+                    {
+                        command.Parameters.AddWithValue("@columnUpdateValue", columnUpdateValue);
+                        command.Parameters.AddWithValue("@recordValue", recordValue);
+                        command.ExecuteNonQuery();
+                        connection.Close();
+                        return true;
+                    }
+                }
+            }
+            catch(Exception ex)
+            {
+                return false;
+            }
+
         }
         #endregion
 
-        #region Log Function
+        #region Logging Functions
         private void LogMessage(string message)
         {
             if (InvokeRequired)
@@ -626,9 +766,51 @@ namespace Monitoring_Server
             }
             txtMonitoringServer.SelectionStart = txtMonitoringServer.Text.Length;
             txtMonitoringServer.ScrollToCaret();
+        }
 
-            Debug.WriteLine(message);
+        private void LogHeartbeat(string message)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action<string>(LogHeartbeat), message);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(txtHeartbeats.Text))
+            {
+                txtHeartbeats.AppendText(message);
+            }
+            else
+            {
+                txtHeartbeats.AppendText(Environment.NewLine + message);
+            }
+            txtHeartbeats.SelectionStart = txtMonitoringServer.Text.Length;
+            txtHeartbeats.ScrollToCaret();
+        }
+
+        private void LogHeartbeatDictionary()
+        {
+            var logBuilder = new StringBuilder();
+            logBuilder.AppendLine("[ " + DateTime.Now.ToString("G") + " ] :: _lastHeartbeatReceived contents:");
+
+            foreach (var kvp in _lastHeartbeatReceived)
+            {
+                logBuilder.AppendLine($"Terminal: {kvp.Key}, Last Heartbeat: {kvp.Value}");
+            }
+
+            LogMessage(logBuilder.ToString());
         }
         #endregion
+
+        #region Classes
+        private class Terminal
+        {
+            public string? TerminalId { get; set; }
+            public string? IPAddress { get; set; }
+            public string? EncryptionKey { get; set; }
+            public string? EncryptionIV { get; set; }
+        }
+        #endregion
+
     }
 }
