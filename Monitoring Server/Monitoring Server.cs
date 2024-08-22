@@ -10,6 +10,9 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
+using Newtonsoft.Json;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+using System.Buffers.Text;
 
 namespace Monitoring_Server
 {
@@ -44,8 +47,10 @@ namespace Monitoring_Server
             // Reset Server Status Label
             lblServerStatus.Text = string.Empty;
 
+            //var fileList = CreateFileList(@"T:\Git Repositries");
+
             // Start Hearbeat monitor
-            MonitorHeartbeat();
+            //MonitorHeartbeat();
 
             // Start the server
             StartServer();
@@ -66,7 +71,7 @@ namespace Monitoring_Server
                     // While listener is not null action the handle Terminal
                     var terminal = await _server.AcceptTcpClientAsync().ConfigureAwait(false);
                     if (terminal != null)
-                    {                        
+                    {
                         LogMessage("[ " + DateTime.Now.ToString("G") + " ] :: " + $"Terminal Connected");
                         // Run handle terminal
                         await Task.Run(() => HandleTerminal(terminal, cancellationToken));
@@ -149,42 +154,39 @@ namespace Monitoring_Server
             var iv = string.Empty;
             string decryptedRequest;
             bool defaultKeysRequired;
- 
+
             try
             {
                 using (terminal)
                 {
-                    var stream = terminal.GetStream(); // Open Stream from the terminal
-                    var buffer = new byte[256]; // Create a buffer to store the byte data
-                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false); // Store the buffered bytes in a variable
+                    var stream = terminal.GetStream();
+                    var buffer = new byte[256];
+                    var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
 
-                    if (bytesRead > 0) // if bytes read are greater than 0, action this code
+                    if (bytesRead > 0)
                     {
+                        var initialRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                        var requestParts = initialRequest.Split(',');
 
-                        var initialRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead); // Convert recieved bytes back into a string
-                        var requestParts = initialRequest.Split(','); // split the message into its parts
-
-                        if (requestParts.Length < 3) // if theres not 3 parts to the message return a error and exit the function
+                        if (requestParts.Length < 3)
                         {
                             await SendErrorResponse(stream, "Invalid Message format", true, defaultKey, defaultIV, cancellationToken);
                             return;
                         }
 
-                        var dateTime = requestParts[0]; // Set Date Time
-                        var terminalName = requestParts[1]; // Set Terminal Name
-                        var encryptedMessage = requestParts[2]; // Set encrypted Message
+                        var dateTime = requestParts[0];
+                        var terminalName = requestParts[1];
+                        var encryptedMessage = requestParts[2];
 
-                        // If any of the parts are null or empty return a invalid request error and exit the function
                         if (string.IsNullOrEmpty(encryptedMessage) || string.IsNullOrEmpty(terminalName) || !DateTime.TryParse(dateTime, out DateTime parsedDateTime))
                         {
                             await SendErrorResponse(stream, "Invalid request data", true, defaultKey, defaultIV, cancellationToken);
                             return;
                         }
 
-                        var terminalID = GetTerminalById(terminalName); // Get the terminal data from the DB if it exists
+                        var terminalID = GetTerminalById(terminalName);
 
-                        // If terminalID returns null use default keys, if terminalID returns ok use the terminal specific keys
-                        if (terminalID == null) 
+                        if (terminalID == null)
                         {
                             key = defaultKey;
                             iv = defaultIV;
@@ -197,11 +199,9 @@ namespace Monitoring_Server
                             defaultKeysRequired = false;
                         }
 
-                        // Attempt to decrypt the recieved message
                         try
                         {
                             decryptedRequest = DecryptString(encryptedMessage, key, iv);
-                            //Debug.WriteLine($"SERVER :: {encryptedMessage} :: KEY :: {key} :: IV :: {iv}");
                         }
                         catch (Exception ex)
                         {
@@ -238,7 +238,6 @@ namespace Monitoring_Server
                             case "REGISTER_TERMINAL":
                                 await RegisterTerminalRequest(terminal, stream, terminalName, (IPEndPoint)terminal.Client.RemoteEndPoint, cancellationToken);
                                 break;
-
                             default:
                                 if (terminalID != null)
                                 {
@@ -386,6 +385,19 @@ namespace Monitoring_Server
 
                 switch (splitDecryptedMessage[0])
                 {
+                    case "KeyVerificationTest":
+                        var responseMessage = "KeysMatch";
+                        var encryptedResponse = EncryptString(responseMessage, terminalID.EncryptionKey, terminalID.EncryptionIV);
+                        var responseBytes = Encoding.UTF8.GetBytes(encryptedResponse);
+                        await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
+                        break;
+                    case "GET_FILE_LIST":
+                        await SendFileListAsync(stream, terminalID.EncryptionKey, terminalID.EncryptionIV, cancellationToken);
+                        break;
+                    case "RETRIEVE_FILE":
+                        var fileName = splitDecryptedMessage[1];
+                        await SendFileAsync(stream, fileName, cancellationToken);
+                        break;
                     case "PING_SERVER":
                         await PingServerRequest(stream, terminalID.EncryptionKey, terminalID.EncryptionIV, cancellationToken);
                         break;
@@ -431,7 +443,7 @@ namespace Monitoring_Server
 
             string tableToUpdate = splitData[1];
             string columnToUpdate = splitData[2];
-            string columnUpdateValue =  splitData[3];
+            string columnUpdateValue = splitData[3];
             string recordID = splitData[4];
             string recordValue = splitData[5];
 
@@ -462,13 +474,132 @@ namespace Monitoring_Server
         }
         #endregion
 
+        #region File Transfer
 
+        private async Task SendFileListAsync(NetworkStream stream, string key, string iv, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var directory = @"T:\Git Repositries";  // Update with your directory path
+                var fileHashes = CreateFileList(directory);
 
+                var fileListJson = JsonConvert.SerializeObject(fileHashes);
+                var encryptedFileList = EncryptString(fileListJson, key, iv);
+                var responseBytes = Encoding.UTF8.GetBytes(encryptedFileList);
+                await stream.WriteAsync(responseBytes, 0, responseBytes.Length, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LogMessage(ex.Message);
+            }
 
+        }
 
+        private async Task SendFileAsync(NetworkStream stream, string filePath, CancellationToken cancellationToken)
+        {
+            if (File.Exists(filePath))
+            {
+                try
+                {
+                    using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        long totalBytesSent = 0;
+                        LogMessage("Starting file transfer...");
 
+                        while ((bytesRead = await fileStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+                        {
+                            await stream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+                            totalBytesSent += bytesRead;
+                            LogMessage($"Sent {bytesRead} bytes. Total bytes sent: {totalBytesSent}");
+                        }
 
+                        // Signal the end of the file transfer
+                        await stream.WriteAsync(Encoding.UTF8.GetBytes("EOF"), 0, 3, cancellationToken);
+                        LogMessage("EOF sent, file transfer completed successfully.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"Error during file transfer: {ex.Message}");
+                    throw;
+                }
+            }
+            else
+            {
+                LogMessage("File not found.");
+                await SendErrorResponse(stream, "File not found", true, string.Empty, string.Empty, cancellationToken);
+            }
+        }
 
+        private Dictionary<string, string> CreateFileList(string directory)
+        {
+            var fileHashes = new Dictionary<string, string>();
+            var allFiles = Directory.GetFiles(directory, "*", SearchOption.AllDirectories);
+            int totalFiles = allFiles.Length;
+
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() =>
+                {
+                    pbFiles.Visible = true;
+                    pbFiles.Maximum = totalFiles;
+                    pbFiles.Value = 0;
+                }));
+            }
+            else
+            {
+                pbFiles.Visible = true;
+                pbFiles.Maximum = totalFiles;
+                pbFiles.Value = 0;
+            }
+
+            foreach (var filePath in allFiles)
+            {
+                // Get the relative path of the file
+                var relativePath = Path.GetRelativePath(directory, filePath);
+
+                UpdateProgressBar(pbFiles.Value + 1, $"Hashing File: {relativePath}");
+
+                // Hash the file
+                using (var sha256 = SHA256.Create())
+                {
+                    using (var stream = File.OpenRead(filePath))
+                    {
+                        var hash = sha256.ComputeHash(stream);
+                        // Store the hash with the relative path as the key
+                        fileHashes[relativePath] = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    }
+                }
+            }
+
+            UpdateProgressBar(0, "Hashing of files complete");
+            return fileHashes;
+        }
+
+        private void UpdateProgressBar(int progress, string message)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => UpdateProgressBar(progress, message)));
+            }
+            else
+            {
+                if (progress == 0)
+                {
+                    pbFiles.Visible = false;
+                    lblHashingFile.Text = message;
+                }
+                else
+                {
+                    pbFiles.Value = progress;
+                    lblHashingFile.Text = message;
+                }
+            }
+        }
+
+        #endregion
 
 
         #region Unknown Request Handler
@@ -739,7 +870,7 @@ namespace Monitoring_Server
                     }
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 return false;
             }

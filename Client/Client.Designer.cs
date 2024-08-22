@@ -33,9 +33,13 @@
             btnClearText = new Button();
             btnRegisterTerminal = new Button();
             tableLayoutPanel1 = new TableLayoutPanel();
-            statusStrip1 = new StatusStrip();
             btnUpdateDatabase = new Button();
+            btnUpdatefiles = new Button();
+            statusStrip1 = new StatusStrip();
+            pbFiles = new ToolStripProgressBar();
+            lblHashingFile = new ToolStripStatusLabel();
             tableLayoutPanel1.SuspendLayout();
+            statusStrip1.SuspendLayout();
             SuspendLayout();
             // 
             // btnPingTheServer
@@ -93,6 +97,7 @@
             tableLayoutPanel1.Controls.Add(btnRegisterTerminal, 0, 0);
             tableLayoutPanel1.Controls.Add(btnClearText, 0, 28);
             tableLayoutPanel1.Controls.Add(btnUpdateDatabase, 0, 2);
+            tableLayoutPanel1.Controls.Add(btnUpdatefiles, 0, 3);
             tableLayoutPanel1.Dock = DockStyle.Fill;
             tableLayoutPanel1.Location = new Point(0, 0);
             tableLayoutPanel1.Name = "tableLayoutPanel1";
@@ -130,16 +135,6 @@
             tableLayoutPanel1.Size = new Size(1043, 889);
             tableLayoutPanel1.TabIndex = 4;
             // 
-            // statusStrip1
-            // 
-            statusStrip1.Location = new Point(0, 889);
-            statusStrip1.Name = "statusStrip1";
-            statusStrip1.RenderMode = ToolStripRenderMode.Professional;
-            statusStrip1.Size = new Size(1043, 22);
-            statusStrip1.SizingGrip = false;
-            statusStrip1.TabIndex = 5;
-            statusStrip1.Text = "statusStrip1";
-            // 
             // btnUpdateDatabase
             // 
             btnUpdateDatabase.Location = new Point(3, 61);
@@ -149,6 +144,40 @@
             btnUpdateDatabase.Text = "Update DB";
             btnUpdateDatabase.UseVisualStyleBackColor = true;
             btnUpdateDatabase.Click += btnUpdateDatabase_Click;
+            // 
+            // btnUpdatefiles
+            // 
+            btnUpdatefiles.Location = new Point(3, 90);
+            btnUpdatefiles.Name = "btnUpdatefiles";
+            btnUpdatefiles.Size = new Size(122, 23);
+            btnUpdatefiles.TabIndex = 5;
+            btnUpdatefiles.Text = "Download Updates";
+            btnUpdatefiles.UseVisualStyleBackColor = true;
+            btnUpdatefiles.Click += btnUpdatefiles_Click;
+            // 
+            // statusStrip1
+            // 
+            statusStrip1.Items.AddRange(new ToolStripItem[] { pbFiles, lblHashingFile });
+            statusStrip1.Location = new Point(0, 889);
+            statusStrip1.Name = "statusStrip1";
+            statusStrip1.RenderMode = ToolStripRenderMode.Professional;
+            statusStrip1.Size = new Size(1043, 22);
+            statusStrip1.SizingGrip = false;
+            statusStrip1.TabIndex = 5;
+            statusStrip1.Text = "statusStrip1";
+            // 
+            // pbFiles
+            // 
+            pbFiles.Name = "pbFiles";
+            pbFiles.Size = new Size(100, 16);
+            pbFiles.Visible = false;
+            // 
+            // lblHashingFile
+            // 
+            lblHashingFile.Name = "lblHashingFile";
+            lblHashingFile.Size = new Size(82, 17);
+            lblHashingFile.Text = "lblHashingFile";
+            lblHashingFile.Visible = false;
             // 
             // Client
             // 
@@ -166,6 +195,8 @@
             Load += Client_Load;
             tableLayoutPanel1.ResumeLayout(false);
             tableLayoutPanel1.PerformLayout();
+            statusStrip1.ResumeLayout(false);
+            statusStrip1.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -179,5 +210,8 @@
         private TableLayoutPanel tableLayoutPanel1;
         private StatusStrip statusStrip1;
         private Button btnUpdateDatabase;
+        private Button btnUpdatefiles;
+        private ToolStripProgressBar pbFiles;
+        private ToolStripStatusLabel lblHashingFile;
     }
 }

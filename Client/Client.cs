@@ -9,6 +9,9 @@ using System.Diagnostics;
 using System.Security.Cryptography.Xml;
 using System.Net;
 using System.Diagnostics.Eventing.Reader;
+using Newtonsoft.Json;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+
 
 namespace Client
 {
@@ -50,7 +53,7 @@ namespace Client
             }
 
             // Start the heard beat timer
-            InitializeHeartbeatTimer();
+            //InitializeHeartbeatTimer();
 
         }
 
@@ -69,6 +72,11 @@ namespace Client
         private async void btnUpdateDatabase_Click(object sender, EventArgs e)
         {
             await RequestUpdateDatabase();
+        }
+
+        private async void btnUpdatefiles_Click(object sender, EventArgs e)
+        {
+            await CheckAndUpdateFilesAsync();
         }
 
         private void InitializeHeartbeatTimer()
@@ -172,7 +180,7 @@ namespace Client
             if (!string.IsNullOrEmpty(Properties.Settings.Default.Key) && !string.IsNullOrEmpty(Properties.Settings.Default.IV))
             {
                 Log("[ " + DateTime.Now.ToString("G") + " ] :: " + "[ " + Environment.MachineName + " ] " + "Terminal already registered with the Server");
-                return; 
+                return;
             }
 
             try
@@ -290,7 +298,7 @@ namespace Client
 
         #endregion
 
-        #region Update Database
+        #region Update Database (DONE ONLY FOR BASIC COMMAND)
         private async Task RequestUpdateDatabase()
         {
             EncryptionKey = Properties.Settings.Default.Key;
@@ -354,7 +362,187 @@ namespace Client
 
         #endregion
 
+        #region Downloadfiles
 
+        private async Task CheckAndUpdateFilesAsync()
+        {
+            var serverFileList = await DownloadFileListAsync();
+            if (serverFileList == null)
+            {
+                Log("Failed to download file list from server.");
+                return;
+            }
+
+            var localFileHashes = GenerateLocalFileHashes(Application.StartupPath);
+            var mismatchedFiles = CompareHashes(localFileHashes, serverFileList);
+
+            if (mismatchedFiles.Any())
+            {
+                await RequestFileTransferAsync(mismatchedFiles);
+                Log("File update completed.");
+            }
+            else
+            {
+                Log("All files are up to date.");
+            }
+        }
+
+        private Dictionary<string, string> GenerateLocalFileHashes(string directory)
+        {
+            var fileHashes = new Dictionary<string, string>();
+            var allFiles = Directory.GetFiles(directory, "*", SearchOption.AllDirectories);
+            int totalFiles = allFiles.Length;
+
+            UpdateProgressBar(true, totalFiles, string.Empty);
+
+            foreach (var filePath in allFiles)
+            {
+                UpdateProgressBar(false, pbFiles.Value + 1, filePath);
+
+                // Hash the file
+                using (var sha256 = SHA256.Create())
+                {
+                    using (var stream = File.OpenRead(filePath))
+                    {
+                        var hash = sha256.ComputeHash(stream);
+                        fileHashes[filePath] = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    }
+                }
+            }
+
+            UpdateProgressBar(true, 0, string.Empty);
+            return fileHashes;
+        }
+
+        private void UpdateProgressBar(bool reset, int progress, string message)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => UpdateProgressBar(reset, progress, message)));
+            }
+            else
+            {
+                if (reset)
+                {
+                    pbFiles.Visible = progress > 0;
+                    pbFiles.Maximum = progress;
+                    pbFiles.Value = progress > 0 ? 0 : pbFiles.Value;
+                    lblHashingFile.Text = message;
+                }
+                else
+                {
+                    pbFiles.Value = progress;
+                    lblHashingFile.Text = $"Hashing File: {message}";
+                }
+            }
+        }
+
+        private async Task<Dictionary<string, string>> DownloadFileListAsync()
+        {
+            using (var client = new TcpClient())
+            {
+                await client.ConnectAsync("127.0.0.1", 8080);  // Update with correct server address and port
+                var stream = client.GetStream();
+
+                var request = DateTime.Now.ToString("G") + "," + Environment.MachineName + "," + EncryptString(false, "GET_FILE_LIST", EncryptionKey, EncryptionIV);
+                var requestBytes = Encoding.UTF8.GetBytes(request);
+                await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
+
+                var responseBuffer = new byte[2081344];
+                var bytesRead = await stream.ReadAsync(responseBuffer, 0, responseBuffer.Length);
+
+                if (bytesRead > 0)
+                {
+                    var encryptedResponse = Encoding.UTF8.GetString(responseBuffer, 0, bytesRead);
+                    string decryptedResponse = DecryptString(encryptedResponse, EncryptionKey, EncryptionIV);
+
+                    var serverFileList = JsonConvert.DeserializeObject<Dictionary<string, string>>(decryptedResponse);
+                    return serverFileList;
+                }
+
+                return null;
+            }
+        }
+
+        private async Task RequestFileTransferAsync(List<string> mismatchedFiles)
+        {
+            try
+            {
+                //Log("Starting RequestFileTransferAsync...");
+                using (var client = new TcpClient())
+                {
+                    await client.ConnectAsync("127.0.0.1", 8080);
+                    //Log("Connected to server.");
+                    var stream = client.GetStream();
+
+                    foreach (var relativeFilePath in mismatchedFiles)
+                    {
+                        //Log($"Requesting file: {relativeFilePath}");
+                        var request = DateTime.Now.ToString("G") + "," + Environment.MachineName + "," + EncryptString(false, $"RETRIEVE_FILE,{relativeFilePath}", EncryptionKey, EncryptionIV);
+                        var requestBytes = Encoding.UTF8.GetBytes(request);
+                        await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
+                       // Log("Request sent.");
+
+                        var buffer = new byte[8192];
+                        var fullFilePath = Path.Combine(Application.StartupPath, "UpdateFiles", relativeFilePath);
+
+                        // Ensure the directory exists
+                        var directoryPath = Path.GetDirectoryName(fullFilePath);
+                        if (!Directory.Exists(directoryPath))
+                        {
+                            Directory.CreateDirectory(directoryPath);
+                        }
+
+                        // Use FileStream to write the received file directly to disk
+                        using (var fileStream = new FileStream(fullFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                        {
+                            int bytesRead;
+                            while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                            {
+                                var data = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                                if (data.Contains("EOF"))
+                                {
+                                    // Remove the EOF marker from the data
+                                    var eofIndex = data.IndexOf("EOF");
+                                    if (eofIndex > 0)
+                                    {
+                                        await fileStream.WriteAsync(buffer, 0, eofIndex);
+                                    }
+                                    //Log("EOF received, ending file transfer.");
+                                    break;
+                                }
+                                await fileStream.WriteAsync(buffer, 0, bytesRead);
+                            }
+                        }
+
+                        //Log($"Updated file: {relativeFilePath}");
+                    }
+                }
+                //Log("Completed RequestFileTransferAsync.");
+            }
+            catch (Exception ex)
+            {
+                //Log($"Exception in RequestFileTransferAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        private List<string> CompareHashes(Dictionary<string, string> localHashes, Dictionary<string, string> serverHashes)
+        {
+            var mismatchedFiles = new List<string>();
+
+            foreach (var serverFile in serverHashes)
+            {
+                if (!localHashes.TryGetValue(serverFile.Key, out var localHash) || localHash != serverFile.Value)
+                {
+                    mismatchedFiles.Add(serverFile.Key);
+                }
+            }
+
+            return mismatchedFiles;
+        }
+
+        #endregion
 
 
 
@@ -449,6 +637,38 @@ namespace Client
         }
         #endregion
 
+        #region Key verification
+        private async Task<bool> VerifyEncryptionKeysAsync()
+        {
+            using (var client = new TcpClient())
+            {
+                await client.ConnectAsync("127.0.0.1", 8080);  // Update with correct server address and port
+                var stream = client.GetStream();
+
+                string testMessage = "KeyVerificationTest";
+                var encryptedTestMessage = EncryptString(false, testMessage, EncryptionKey, EncryptionIV);
+                var requestBytes = Encoding.UTF8.GetBytes(encryptedTestMessage);
+                await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
+
+                var responseBuffer = new byte[256];
+                var bytesRead = await stream.ReadAsync(responseBuffer, 0, responseBuffer.Length);
+                var encryptedResponse = Encoding.UTF8.GetString(responseBuffer, 0, bytesRead);
+                string decryptedResponse = DecryptString(encryptedResponse, EncryptionKey, EncryptionIV);
+
+                if (decryptedResponse == "KeysMatch")
+                {
+                    Log("Encryption keys verified successfully.");
+                    return true;
+                }
+                else
+                {
+                    LogError("Encryption key verification failed.");
+                    return false;
+                }
+            }
+        }
+        #endregion
+
         #region Logging
 
         private void Log(string message)
@@ -482,6 +702,7 @@ namespace Client
         }
 
         #endregion
+
 
 
     }

@@ -32,6 +32,7 @@
             menuStartServer = new ToolStripMenuItem();
             clearTextToolStripMenuItem = new ToolStripMenuItem();
             settingsToolStripMenuItem = new ToolStripMenuItem();
+            createFileListToolStripMenuItem = new ToolStripMenuItem();
             tabcServerConsole = new TabControl();
             tpLogs = new TabPage();
             txtMonitoringServer = new TextBox();
@@ -39,6 +40,8 @@
             txtHeartbeats = new TextBox();
             statusStrip1 = new StatusStrip();
             lblServerStatus = new ToolStripStatusLabel();
+            lblHashingFile = new ToolStripStatusLabel();
+            pbFiles = new ToolStripProgressBar();
             menuStrip1.SuspendLayout();
             tabcServerConsole.SuspendLayout();
             tpLogs.SuspendLayout();
@@ -48,7 +51,7 @@
             // 
             // menuStrip1
             // 
-            menuStrip1.Items.AddRange(new ToolStripItem[] { menuStartServer, clearTextToolStripMenuItem, settingsToolStripMenuItem });
+            menuStrip1.Items.AddRange(new ToolStripItem[] { menuStartServer, clearTextToolStripMenuItem, settingsToolStripMenuItem, createFileListToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
             menuStrip1.Size = new Size(1174, 24);
@@ -74,6 +77,12 @@
             settingsToolStripMenuItem.Name = "settingsToolStripMenuItem";
             settingsToolStripMenuItem.Size = new Size(61, 20);
             settingsToolStripMenuItem.Text = "Settings";
+            // 
+            // createFileListToolStripMenuItem
+            // 
+            createFileListToolStripMenuItem.Name = "createFileListToolStripMenuItem";
+            createFileListToolStripMenuItem.Size = new Size(95, 20);
+            createFileListToolStripMenuItem.Text = "Create File List";
             // 
             // tabcServerConsole
             // 
@@ -117,7 +126,7 @@
             tpHeartbeats.Location = new Point(4, 24);
             tpHeartbeats.Name = "tpHeartbeats";
             tpHeartbeats.Padding = new Padding(3);
-            tpHeartbeats.Size = new Size(1171, 584);
+            tpHeartbeats.Size = new Size(1166, 689);
             tpHeartbeats.TabIndex = 1;
             tpHeartbeats.Text = "Client Heart Beats";
             tpHeartbeats.UseVisualStyleBackColor = true;
@@ -131,12 +140,12 @@
             txtHeartbeats.Location = new Point(3, 3);
             txtHeartbeats.Multiline = true;
             txtHeartbeats.Name = "txtHeartbeats";
-            txtHeartbeats.Size = new Size(1165, 578);
+            txtHeartbeats.Size = new Size(1160, 683);
             txtHeartbeats.TabIndex = 0;
             // 
             // statusStrip1
             // 
-            statusStrip1.Items.AddRange(new ToolStripItem[] { lblServerStatus });
+            statusStrip1.Items.AddRange(new ToolStripItem[] { lblServerStatus, pbFiles, lblHashingFile });
             statusStrip1.Location = new Point(0, 741);
             statusStrip1.Name = "statusStrip1";
             statusStrip1.Size = new Size(1174, 22);
@@ -149,6 +158,18 @@
             lblServerStatus.Name = "lblServerStatus";
             lblServerStatus.Size = new Size(84, 17);
             lblServerStatus.Text = "lblServerStatus";
+            // 
+            // lblHashingFile
+            // 
+            lblHashingFile.Name = "lblHashingFile";
+            lblHashingFile.Size = new Size(82, 17);
+            lblHashingFile.Text = "lblHashingFile";
+            // 
+            // pbFiles
+            // 
+            pbFiles.Name = "pbFiles";
+            pbFiles.Size = new Size(100, 16);
+            pbFiles.Visible = false;
             // 
             // MonitoringServer
             // 
@@ -187,5 +208,8 @@
         private ToolStripMenuItem settingsToolStripMenuItem;
         private StatusStrip statusStrip1;
         private ToolStripStatusLabel lblServerStatus;
+        private ToolStripMenuItem createFileListToolStripMenuItem;
+        private ToolStripStatusLabel lblHashingFile;
+        private ToolStripProgressBar pbFiles;
     }
 }
